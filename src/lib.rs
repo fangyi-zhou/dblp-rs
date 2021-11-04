@@ -9,6 +9,7 @@ extern crate serde_json;
 
 use serde::de::DeserializeOwned;
 use serde::de::MapAccess;
+use serde::de::SeqAccess;
 use serde::Deserialize;
 use serde_json::Value;
 use std::fmt;
@@ -21,7 +22,7 @@ async fn make_request(api_endpoint: &str, query_string: &str) -> anyhow::Result<
         .send()
         .await?;
     let result = response.json::<Value>().await?;
-    //println!("{:?}", result);
+    // println!("{:?}", result);
     Ok(result["result"]["hits"].to_owned())
 }
 
@@ -31,7 +32,10 @@ fn process_hits<T: DeserializeOwned>(hits: Value) -> anyhow::Result<Vec<T>> {
     } else if let Value::Array(values_json) = &hits["hit"] {
         let values = values_json
             .iter()
-            .map(|v| serde_json::from_value(v["info"].to_owned()))
+            .map(|v| {
+                // println!("{:?}", v);
+                serde_json::from_value(v["info"].to_owned())
+            })
             .collect::<Result<Vec<T>, _>>()?;
         Ok(values)
     } else {
@@ -77,16 +81,48 @@ where
     deserializer.deserialize_any(JsonVisitor)
 }
 
+fn deserialise_venue_in_publication<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    struct JsonVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for JsonVisitor {
+        type Value = Vec<String>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("venues")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let mut venues = Vec::new();
+            while let Some(Value::String(venue)) = seq.next_element()? {
+                venues.push(venue);
+            }
+            Ok(venues)
+        }
+
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> {
+            Ok(vec![s.to_owned()])
+        }
+    }
+    deserializer.deserialize_any(JsonVisitor)
+}
+
 #[derive(Deserialize, Debug)]
 pub struct Publication {
     #[serde(deserialize_with = "deserialise_author_in_publication")]
     pub authors: Vec<String>,
     pub title: String,
-    pub venue: String,
+    #[serde(deserialize_with = "deserialise_venue_in_publication")]
+    pub venue: Vec<String>,
     pub pages: Option<String>,
     pub year: String,
     pub r#type: String,
-    pub access: String,
+    pub access: Option<String>,
     pub key: String,
     pub doi: Option<String>,
     pub ee: String,
@@ -128,7 +164,7 @@ pub async fn search_author(query_string: &str) -> anyhow::Result<Vec<Author>> {
 #[derive(Deserialize)]
 pub struct Venue {
     pub venue: String,
-    pub acronym: String,
+    pub acronym: Option<String>,
     pub r#type: String,
     pub url: String,
 }
@@ -158,14 +194,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn integration_test_more_publication() {
+        let result = search_publication("proceedings").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
     async fn integration_test_author() {
         let result = search_author("Leslie Lamport").await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
+    async fn integration_test_more_author() {
+        let result = search_author("Hu").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
     async fn integration_test_venue() {
         let result = search_venue("TOCS").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn integration_test_more_venue() {
+        let result = search_venue("Transactions").await;
         assert!(result.is_ok());
     }
 }
