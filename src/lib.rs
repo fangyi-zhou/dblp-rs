@@ -113,20 +113,24 @@ where
 }
 
 #[derive(Deserialize, Debug)]
+//#[serde(deny_unknown_fields)]
 pub struct Publication {
     #[serde(deserialize_with = "deserialise_author_in_publication")]
     pub authors: Vec<String>,
     pub title: String,
     #[serde(deserialize_with = "deserialise_venue_in_publication")]
     pub venue: Vec<String>,
-    pub pages: Option<String>,
     pub year: String,
     pub r#type: String,
-    pub access: Option<String>,
     pub key: String,
-    pub doi: Option<String>,
     pub ee: String,
     pub url: String,
+    pub access: Option<String>,
+    pub publisher: Option<String>,
+    pub doi: Option<String>,
+    pub pages: Option<String>,
+    pub volume: Option<String>,
+    pub number: Option<String>,
 }
 
 /// Search for a publication, returns a JSON value
@@ -142,10 +146,97 @@ pub async fn search_publication(query_string: &str) -> anyhow::Result<Vec<Public
     Ok(pubs)
 }
 
+fn deserialise_notes_in_author<'de, D>(deserializer: D) -> Result<Vec<(String, String)>, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    struct JsonVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for JsonVisitor {
+        type Value = Vec<(String, String)>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("notes")
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            let _ = map.next_key::<String>()?;
+            let entry = map.next_value::<serde_json::Value>()?;
+            if let Value::Array(notes) = entry {
+                let notes = notes
+                    .iter()
+                    .map(|v| {
+                        (
+                            v["@type"].as_str().unwrap().to_owned(),
+                            v["text"].as_str().unwrap().to_owned(),
+                        )
+                    })
+                    .collect();
+                Ok(notes)
+            } else if let Value::Object(note) = entry {
+                Ok(vec![(
+                    note["@type"].as_str().unwrap().to_owned(),
+                    note["text"].as_str().unwrap().to_owned(),
+                )])
+            } else {
+                panic!()
+            }
+        }
+    }
+    deserializer.deserialize_any(JsonVisitor)
+}
+
+fn deserialise_aliases_in_author<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    struct JsonVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for JsonVisitor {
+        type Value = Vec<String>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("aliases")
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            let _ = map.next_key::<String>()?;
+            let entry = map.next_value::<serde_json::Value>()?;
+            if let Value::Array(aliases) = entry {
+                let aliases = aliases
+                    .iter()
+                    .map(|v| v.as_str().unwrap().to_owned())
+                    .collect();
+                Ok(aliases)
+            } else if let Value::String(alias) = entry {
+                Ok(vec![alias])
+            } else {
+                panic!()
+            }
+        }
+
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> {
+            Ok(vec![s.to_owned()])
+        }
+    }
+    deserializer.deserialize_any(JsonVisitor)
+}
+
 #[derive(Deserialize)]
+//#[serde(deny_unknown_fields)]
 pub struct Author {
     pub author: String,
     pub url: String,
+    #[serde(deserialize_with = "deserialise_notes_in_author", default)]
+    pub notes: Vec<(String, String)>,
+    #[serde(deserialize_with = "deserialise_aliases_in_author", default)]
+    pub aliases: Vec<String>,
 }
 
 /// Search for an author, returns a JSON value
@@ -162,6 +253,7 @@ pub async fn search_author(query_string: &str) -> anyhow::Result<Vec<Author>> {
 }
 
 #[derive(Deserialize)]
+//#[serde(deny_unknown_fields)]
 pub struct Venue {
     pub venue: String,
     pub acronym: Option<String>,
