@@ -190,36 +190,36 @@ mod tests {
     #[tokio::test]
     async fn integration_test_publication() {
         let result = search_publication("The Part-Time Parliament").await;
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[tokio::test]
     async fn integration_test_more_publication() {
         let result = search_publication("proceedings").await;
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[tokio::test]
     async fn integration_test_author() {
         let result = search_author("Leslie Lamport").await;
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[tokio::test]
     async fn integration_test_more_author() {
         let result = search_author("Hu").await;
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[tokio::test]
     async fn integration_test_venue() {
         let result = search_venue("TOCS").await;
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[tokio::test]
     async fn integration_test_more_venue() {
         let result = search_venue("Transactions").await;
-        assert!(result.is_ok());
+        result.unwrap();
     }
 }
